@@ -1,0 +1,18 @@
+# Deepfake Detection Dependencies
+# Install with: pip install -r requirements.txt
+
+# Essential packages (required for basic CV detector)
+opencv-python>=4.8.0
+numpy>=1.24.0
+Pillow>=10.0.0
+flask>=3.0.0
+werkzeug>=3.0.0
+
+# Hugging Face detector (recommended - more accurate)
+# Install these for the AI-powered detector:
+transformers>=4.36.0
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Note: The HF detector uses prithivMLmods/open-deepfake-detection
+# First run will download the model (~350MB)

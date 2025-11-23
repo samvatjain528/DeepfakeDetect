@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python app.py:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd deepfake detection web app with CV and HuggingFace detectors\n\n- CV Detector: Traditional computer vision methods (frequency analysis,\n  texture analysis, noise patterns, etc.)\n- HF Detector: Hugging Face model (prithivMLmods/open-deepfake-detection)\n- Flask web interface with drag-drop upload\n- Multi-face comparison to detect AI faces in group photos\n- Supports images and videos\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

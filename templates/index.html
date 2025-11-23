@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deepfake Detector</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">🔍</span>
+                <h1>Deepfake Detector</h1>
+            </div>
+            <p class="tagline">Upload an image or video to detect deepfake content</p>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Upload Section -->
+            <section class="upload-section">
+                <!-- Detector Selector -->
+                <div class="detector-selector">
+                    <label>Detection Method:</label>
+                    <div class="detector-options">
+                        <label class="detector-option">
+                            <input type="radio" name="detector" value="cv" checked>
+                            <span class="option-card">
+                                <span class="option-icon">⚡</span>
+                                <span class="option-name">CV Detector</span>
+                                <span class="option-desc">Fast, no GPU needed</span>
+                            </span>
+                        </label>
+                        <label class="detector-option {% if not hf_available %}disabled{% endif %}">
+                            <input type="radio" name="detector" value="hf" {% if not hf_available %}disabled{% endif %}>
+                            <span class="option-card">
+                                <span class="option-icon">🤖</span>
+                                <span class="option-name">AI Detector</span>
+                                <span class="option-desc">{% if hf_available %}More accurate (HF model){% else %}Install: pip install transformers torch{% endif %}</span>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="upload-area" id="dropZone">
+                    <div class="upload-icon">📁</div>
+                    <h3>Drag & Drop your file here</h3>
+                    <p>or</p>
+                    <label class="upload-btn">
+                        <input type="file" id="fileInput" accept="image/*,video/*" hidden>
+                        Browse Files
+                    </label>
+                    <p class="file-types">Supports: JPG, PNG, WEBP, MP4, AVI, MOV</p>
+                </div>
+
+                <!-- URL Input -->
+                <div class="url-section">
+                    <p class="divider"><span>or analyze from URL</span></p>
+                    <div class="url-input-group">
+                        <input type="url" id="urlInput" placeholder="Paste image URL here...">
+                        <button id="urlBtn" class="analyze-url-btn">Analyze URL</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results-section" id="resultsSection" style="display: none;">
+                <!-- Image Preview -->
+                <div class="preview-container">
+                    <div class="preview-tabs">
+                        <button class="tab-btn active" data-tab="annotated">Analyzed</button>
+                        <button class="tab-btn" data-tab="original">Original</button>
+                    </div>
+                    <div class="preview-image">
+                        <img id="previewImage" src="" alt="Analysis preview">
+                    </div>
+                </div>
+
+                <!-- Results Panel -->
+                <div class="results-panel">
+                    <!-- Verdict Card -->
+                    <div class="verdict-card" id="verdictCard">
+                        <div class="detector-badge" id="detectorBadge">CV Detector</div>
+                        <h2 id="verdictText">Analyzing...</h2>
+                        <div class="confidence-meter">
+                            <div class="confidence-bar" id="confidenceBar"></div>
+                        </div>
+                        <p class="confidence-text"><span id="confidenceValue">0</span>% Confidence</p>
+                    </div>
+
+                    <!-- Score Details -->
+                    <div class="scores-card">
+                        <h3>Analysis Breakdown</h3>
+                        <div class="score-item">
+                            <span class="score-label">Frequency Analysis</span>
+                            <div class="score-bar-container">
+                                <div class="score-bar" id="freqBar"></div>
+                            </div>
+                            <span class="score-value" id="freqValue">-</span>
+                        </div>
+                        <div class="score-item">
+                            <span class="score-label">Face Consistency</span>
+                            <div class="score-bar-container">
+                                <div class="score-bar" id="consistencyBar"></div>
+                            </div>
+                            <span class="score-value" id="consistencyValue">-</span>
+                        </div>
+                        <div class="score-item">
+                            <span class="score-label">Quality Analysis</span>
+                            <div class="score-bar-container">
+                                <div class="score-bar" id="qualityBar"></div>
+                            </div>
+                            <span class="score-value" id="qualityValue">-</span>
+                        </div>
+                        <div class="faces-detected">
+                            <span>👤 Faces Detected:</span>
+                            <span id="facesCount">0</span>
+                        </div>
+                    </div>
+
+                    <!-- Explanation -->
+                    <div class="explanation-card">
+                        <h3>What This Means</h3>
+                        <p id="explanationText">Loading analysis...</p>
+                    </div>
+
+                    <!-- Analyze Another -->
+                    <button class="new-analysis-btn" id="newAnalysisBtn">
+                        ↻ Analyze Another File
+                    </button>
+                </div>
+            </section>
+
+            <!-- Loading Overlay -->
+            <div class="loading-overlay" id="loadingOverlay">
+                <div class="loader"></div>
+                <p>Analyzing for deepfakes...</p>
+                <p class="loading-subtext">This may take a moment</p>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>⚠️ This is an educational tool. For critical decisions, use professional forensic analysis.</p>
+            <p class="footer-links">
+                <a href="https://github.com" target="_blank">GitHub</a> •
+                <span>Built with Python & Flask</span>
+            </p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
