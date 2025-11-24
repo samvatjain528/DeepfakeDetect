@@ -295,17 +295,11 @@ class HuggingFaceDeepfakeDetector:
         return results
 
     def _get_verdict(self, score: float) -> str:
-        """Convert score to verdict string."""
-        if score < 0.2:
-            return "Likely REAL"
-        elif score < 0.4:
-            return "Probably REAL"
-        elif score < 0.6:
-            return "UNCERTAIN"
-        elif score < 0.8:
-            return "Probably FAKE"
+        """Convert score to verdict string (simplified to REAL or FAKE)."""
+        if score < 0.50:
+            return "REAL"
         else:
-            return "Likely FAKE"
+            return "FAKE"
 
     def analyze_image(self, image_path: str) -> Dict:
         """Analyze image from file path."""
@@ -392,24 +386,18 @@ class HuggingFaceDeepfakeDetector:
             prob = face["deepfake_probability"]
             is_ai = face.get("is_likely_ai", prob > 0.5)
 
-            # Color coding
-            if prob < 0.2:
-                color = (0, 255, 0)  # Green
-            elif prob < 0.4:
-                color = (0, 200, 100)  # Light green
-            elif prob < 0.6:
-                color = (0, 255, 255)  # Yellow
-            elif prob < 0.8:
-                color = (0, 165, 255)  # Orange
+            # Color coding (simplified)
+            if prob < 0.50:
+                color = (0, 255, 0)  # Green = REAL
             else:
-                color = (0, 0, 255)  # Red
+                color = (0, 0, 255)  # Red = FAKE
 
             # Draw box
-            thickness = 3 if is_ai else 2
+            thickness = 3 if prob >= 0.50 else 2
             cv2.rectangle(output, (x, y), (x+w, y+h), color, thickness)
 
             # Label
-            label = f"{'FAKE' if is_ai else 'REAL'}: {prob*100:.0f}%"
+            label = f"{'FAKE' if prob >= 0.50 else 'REAL'}: {prob*100:.0f}%"
             (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
             cv2.rectangle(output, (x, y-28), (x + lw + 10, y), color, -1)
             cv2.putText(output, label, (x+5, y-8),

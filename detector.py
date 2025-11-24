@@ -84,6 +84,386 @@ class DeepfakeDetector:
 
     # ========== ENHANCED ANALYSIS METHODS ==========
 
+    def analyze_eye_region(self, face_img: np.ndarray) -> Tuple[float, float]:
+        """
+        Eye analysis - AI often has inconsistent eye details, reflections, iris patterns.
+        """
+        gray = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY) if len(face_img.shape) == 3 else face_img
+        h, w = gray.shape
+
+        # Eye region is typically in upper-middle portion of face
+        eye_region = gray[int(h*0.2):int(h*0.45), int(w*0.1):int(w*0.9)]
+
+        if eye_region.size == 0:
+            return 0.5, 0.5
+
+        # Detect eye-like circular features using Hough circles
+        eye_region_blur = cv2.GaussianBlur(eye_region, (5, 5), 0)
+        circles = cv2.HoughCircles(
+            eye_region_blur, cv2.HOUGH_GRADIENT, 1, 20,
+            param1=50, param2=30, minRadius=5, maxRadius=30
+        )
+
+        # Eye detail analysis - real eyes have complex iris patterns
+        laplacian = cv2.Laplacian(eye_region, cv2.CV_64F)
+        eye_detail = np.var(laplacian)
+
+        # Check for symmetric reflections (catch lights) in eyes
+        left_half = eye_region[:, :eye_region.shape[1]//2]
+        right_half = cv2.flip(eye_region[:, eye_region.shape[1]//2:], 1)
+
+        if left_half.shape == right_half.shape:
+            reflection_symmetry = np.mean(np.abs(left_half.astype(float) - right_half.astype(float)))
+        else:
+            reflection_symmetry = 50
+
+        # Scoring
+        ai_score = 0.5
+        real_score = 0.5
+
+        # High eye detail suggests real
+        if eye_detail > 500:
+            real_score += 0.25
+            ai_score -= 0.15
+        elif eye_detail < 100:
+            ai_score += 0.3
+            real_score -= 0.2
+
+        # AI often has too-perfect or too-asymmetric eye reflections
+        if 20 < reflection_symmetry < 60:
+            real_score += 0.15
+        elif reflection_symmetry < 10:  # Too symmetric
+            ai_score += 0.2
+        elif reflection_symmetry > 80:  # Too asymmetric
+            ai_score += 0.15
+
+        return float(np.clip(ai_score, 0, 1)), float(np.clip(real_score, 0, 1))
+
+    def analyze_teeth_region(self, face_img: np.ndarray) -> Tuple[float, float]:
+        """
+        Teeth/mouth analysis - AI struggles with teeth details and mouth interior.
+        """
+        if len(face_img.shape) != 3:
+            return 0.5, 0.5
+
+        h, w = face_img.shape[:2]
+
+        # Mouth region is in lower-middle portion
+        mouth_region = face_img[int(h*0.55):int(h*0.85), int(w*0.25):int(w*0.75)]
+
+        if mouth_region.size == 0:
+            return 0.5, 0.5
+
+        # Convert to HSV for detecting teeth (high value, low saturation)
+        hsv = cv2.cvtColor(mouth_region, cv2.COLOR_BGR2HSV)
+
+        # Teeth mask: high brightness, low saturation
+        teeth_mask = cv2.inRange(hsv, (0, 0, 180), (180, 60, 255))
+        teeth_pixels = np.sum(teeth_mask > 0)
+        total_pixels = mouth_region.shape[0] * mouth_region.shape[1]
+        teeth_ratio = teeth_pixels / total_pixels if total_pixels > 0 else 0
+
+        # Analyze teeth texture
+        if teeth_pixels > 100:
+            teeth_region = cv2.bitwise_and(mouth_region, mouth_region, mask=teeth_mask)
+            gray_teeth = cv2.cvtColor(teeth_region, cv2.COLOR_BGR2GRAY)
+            teeth_detail = np.var(cv2.Laplacian(gray_teeth, cv2.CV_64F))
+        else:
+            teeth_detail = 0
+
+        # Check for unnatural color transitions in mouth
+        mouth_gray = cv2.cvtColor(mouth_region, cv2.COLOR_BGR2GRAY)
+        gradient = np.abs(cv2.Sobel(mouth_gray, cv2.CV_64F, 1, 1))
+        gradient_smoothness = np.var(gradient)
+
+        ai_score = 0.5
+        real_score = 0.5
+
+        # Real teeth have detail and texture
+        if teeth_ratio > 0.05 and teeth_detail > 100:
+            real_score += 0.2
+            ai_score -= 0.1
+        elif teeth_ratio > 0.05 and teeth_detail < 30:
+            ai_score += 0.25
+            real_score -= 0.15
+
+        # Natural mouth has varied gradients
+        if gradient_smoothness > 500:
+            real_score += 0.1
+        elif gradient_smoothness < 100:
+            ai_score += 0.15
+
+        return float(np.clip(ai_score, 0, 1)), float(np.clip(real_score, 0, 1))
+
+    def analyze_hair_boundary(self, face_img: np.ndarray) -> Tuple[float, float]:
+        """
+        Hair boundary analysis - AI often has unnatural hair-skin transitions.
+        """
+        if len(face_img.shape) != 3:
+            return 0.5, 0.5
+
+        h, w = face_img.shape[:2]
+
+        # Top portion where hair meets forehead
+        hair_region = face_img[0:int(h*0.35), :]
+
+        if hair_region.size == 0:
+            return 0.5, 0.5
+
+        # Edge detection
+        gray = cv2.cvtColor(hair_region, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 50, 150)
+
+        # Hair should have many fine edges (strands)
+        edge_density = np.mean(edges > 0)
+
+        # Analyze color variation in hair region
+        hsv = cv2.cvtColor(hair_region, cv2.COLOR_BGR2HSV)
+        color_var = np.var(hsv[:, :, 0]) + np.var(hsv[:, :, 1])
+
+        # Check for unnatural smooth transitions
+        gradient_h = np.abs(np.diff(gray.astype(float), axis=0))
+        transition_sharpness = np.var(gradient_h)
+
+        ai_score = 0.5
+        real_score = 0.5
+
+        # Real hair has fine edges and color variation
+        if edge_density > 0.15 and color_var > 200:
+            real_score += 0.25
+            ai_score -= 0.15
+        elif edge_density < 0.05:
+            ai_score += 0.2
+            real_score -= 0.1
+
+        # Natural transitions aren't too smooth or too sharp
+        if 100 < transition_sharpness < 1000:
+            real_score += 0.1
+        elif transition_sharpness < 50:
+            ai_score += 0.2
+
+        return float(np.clip(ai_score, 0, 1)), float(np.clip(real_score, 0, 1))
+
+    def analyze_skin_pores(self, face_img: np.ndarray) -> Tuple[float, float]:
+        """
+        Skin pore/texture analysis at high frequency - AI lacks micro details.
+        """
+        gray = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY) if len(face_img.shape) == 3 else face_img
+
+        # Focus on cheek regions where pores are visible
+        h, w = gray.shape
+        left_cheek = gray[int(h*0.4):int(h*0.7), int(w*0.1):int(w*0.35)]
+        right_cheek = gray[int(h*0.4):int(h*0.7), int(w*0.65):int(w*0.9)]
+
+        pore_scores = []
+
+        for cheek in [left_cheek, right_cheek]:
+            if cheek.size < 100:
+                continue
+
+            # High-pass filter to extract fine details
+            blurred = cv2.GaussianBlur(cheek, (15, 15), 0)
+            high_freq = np.abs(cheek.astype(float) - blurred.astype(float))
+
+            # Pores appear as small dark spots - look for local minima
+            kernel = np.ones((3, 3), np.uint8)
+            eroded = cv2.erode(cheek, kernel)
+            local_min = cheek.astype(float) - eroded.astype(float)
+
+            # Count potential pore-like features
+            pore_like = np.sum(local_min > 5) / cheek.size
+            detail_level = np.std(high_freq)
+
+            pore_scores.append((pore_like, detail_level))
+
+        if not pore_scores:
+            return 0.5, 0.5
+
+        avg_pores = np.mean([p[0] for p in pore_scores])
+        avg_detail = np.mean([p[1] for p in pore_scores])
+
+        ai_score = 0.5
+        real_score = 0.5
+
+        # Real skin has visible pores and micro texture
+        if avg_pores > 0.02 and avg_detail > 3:
+            real_score += 0.3
+            ai_score -= 0.2
+        elif avg_pores < 0.005 or avg_detail < 1:
+            ai_score += 0.35
+            real_score -= 0.25
+        elif avg_pores > 0.01:
+            real_score += 0.15
+
+        return float(np.clip(ai_score, 0, 1)), float(np.clip(real_score, 0, 1))
+
+    def analyze_lighting_consistency(self, face_img: np.ndarray) -> Tuple[float, float]:
+        """
+        Lighting analysis - AI sometimes has inconsistent lighting/shadows.
+        """
+        if len(face_img.shape) != 3:
+            return 0.5, 0.5
+
+        lab = cv2.cvtColor(face_img, cv2.COLOR_BGR2LAB)
+        l_channel = lab[:, :, 0].astype(float)
+
+        h, w = l_channel.shape
+
+        # Split face into regions
+        regions = {
+            'top_left': l_channel[:h//2, :w//2],
+            'top_right': l_channel[:h//2, w//2:],
+            'bottom_left': l_channel[h//2:, :w//2],
+            'bottom_right': l_channel[h//2:, w//2:],
+            'center': l_channel[h//4:3*h//4, w//4:3*w//4]
+        }
+
+        region_means = {k: np.mean(v) for k, v in regions.items()}
+        region_stds = {k: np.std(v) for k, v in regions.items()}
+
+        # Natural lighting creates gradients, not random variations
+        left_mean = (region_means['top_left'] + region_means['bottom_left']) / 2
+        right_mean = (region_means['top_right'] + region_means['bottom_right']) / 2
+        top_mean = (region_means['top_left'] + region_means['top_right']) / 2
+        bottom_mean = (region_means['bottom_left'] + region_means['bottom_right']) / 2
+
+        # Check for consistent gradient direction
+        h_gradient = abs(left_mean - right_mean)
+        v_gradient = abs(top_mean - bottom_mean)
+
+        # Natural lighting: one dominant gradient direction
+        gradient_ratio = min(h_gradient, v_gradient) / (max(h_gradient, v_gradient) + 1)
+
+        # Check lighting smoothness
+        gradient_img = cv2.Sobel(l_channel, cv2.CV_64F, 1, 1)
+        gradient_var = np.var(gradient_img)
+
+        ai_score = 0.5
+        real_score = 0.5
+
+        # Natural lighting has directional gradients
+        if gradient_ratio < 0.5 and 500 < gradient_var < 5000:
+            real_score += 0.2
+            ai_score -= 0.1
+        elif gradient_ratio > 0.8:  # Too uniform = possibly AI
+            ai_score += 0.15
+
+        # Check for unnaturally uniform regions
+        min_std = min(region_stds.values())
+        if min_std < 5:  # Some region is too uniform
+            ai_score += 0.2
+            real_score -= 0.1
+
+        return float(np.clip(ai_score, 0, 1)), float(np.clip(real_score, 0, 1))
+
+    def analyze_blur_consistency(self, face_img: np.ndarray) -> Tuple[float, float]:
+        """
+        Blur consistency - real photos have consistent depth-of-field blur.
+        """
+        gray = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY) if len(face_img.shape) == 3 else face_img
+
+        h, w = gray.shape
+
+        # Divide into grid and measure local sharpness
+        grid_size = 4
+        sharpness_grid = []
+
+        for i in range(grid_size):
+            row = []
+            for j in range(grid_size):
+                region = gray[i*h//grid_size:(i+1)*h//grid_size,
+                             j*w//grid_size:(j+1)*w//grid_size]
+                if region.size > 0:
+                    lap = cv2.Laplacian(region, cv2.CV_64F)
+                    sharpness = np.var(lap)
+                    row.append(sharpness)
+            if row:
+                sharpness_grid.append(row)
+
+        if not sharpness_grid:
+            return 0.5, 0.5
+
+        sharpness_array = np.array(sharpness_grid)
+
+        # Check for gradual blur transitions (natural DoF)
+        h_diff = np.abs(np.diff(sharpness_array, axis=1))
+        v_diff = np.abs(np.diff(sharpness_array, axis=0))
+
+        # Calculate smoothness of sharpness transitions
+        transition_smoothness = np.mean(h_diff) + np.mean(v_diff)
+        sharpness_variance = np.var(sharpness_array)
+
+        ai_score = 0.5
+        real_score = 0.5
+
+        # Real DoF: smooth transitions, some variance
+        if transition_smoothness < sharpness_variance * 0.5 and sharpness_variance > 100:
+            real_score += 0.2
+            ai_score -= 0.1
+        elif sharpness_variance < 50:  # Too uniform sharpness
+            ai_score += 0.15
+        elif transition_smoothness > sharpness_variance:  # Abrupt changes
+            ai_score += 0.2
+
+        return float(np.clip(ai_score, 0, 1)), float(np.clip(real_score, 0, 1))
+
+    def analyze_background_face_consistency(self, face_img: np.ndarray, full_image: np.ndarray = None) -> Tuple[float, float]:
+        """
+        Check consistency between face and surrounding area.
+        """
+        # This method works best when we have the full image
+        # For now, analyze edge regions of the face crop
+
+        if len(face_img.shape) != 3:
+            return 0.5, 0.5
+
+        h, w = face_img.shape[:2]
+
+        # Get edge regions
+        top_edge = face_img[:int(h*0.1), :]
+        bottom_edge = face_img[int(h*0.9):, :]
+        left_edge = face_img[:, :int(w*0.1)]
+        right_edge = face_img[:, int(w*0.9):]
+
+        # Get center region
+        center = face_img[int(h*0.3):int(h*0.7), int(w*0.3):int(w*0.7)]
+
+        # Compare noise levels
+        def get_noise_level(region):
+            if region.size == 0:
+                return 0
+            gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY) if len(region.shape) == 3 else region
+            blur = cv2.GaussianBlur(gray, (5, 5), 0)
+            noise = np.std(gray.astype(float) - blur.astype(float))
+            return noise
+
+        edge_noises = [get_noise_level(e) for e in [top_edge, bottom_edge, left_edge, right_edge]]
+        center_noise = get_noise_level(center)
+
+        avg_edge_noise = np.mean([n for n in edge_noises if n > 0])
+
+        # Check color consistency
+        def get_color_stats(region):
+            if region.size == 0:
+                return 0, 0
+            return np.mean(region), np.std(region)
+
+        edge_colors = [get_color_stats(e) for e in [top_edge, bottom_edge, left_edge, right_edge]]
+        center_color = get_color_stats(center)
+
+        ai_score = 0.5
+        real_score = 0.5
+
+        # Noise should be relatively consistent
+        if avg_edge_noise > 0 and center_noise > 0:
+            noise_ratio = center_noise / (avg_edge_noise + 1e-8)
+            if 0.5 < noise_ratio < 2.0:
+                real_score += 0.15
+            else:
+                ai_score += 0.2
+
+        return float(np.clip(ai_score, 0, 1)), float(np.clip(real_score, 0, 1))
+
     def analyze_multiscale_frequency(self, face_img: np.ndarray) -> Tuple[float, float]:
         """
         Multi-scale FFT analysis - AI has characteristic frequency artifacts.
@@ -478,7 +858,7 @@ class DeepfakeDetector:
         if face_img.size == 0 or face_img.shape[0] < 30 or face_img.shape[1] < 30:
             return {"error": "Face too small"}
 
-        # Run all analyses
+        # Run all analyses (expanded with new methods)
         analyses = {
             'frequency': self.analyze_multiscale_frequency(face_img),
             'channel_corr': self.analyze_channel_correlation(face_img),
@@ -488,18 +868,32 @@ class DeepfakeDetector:
             'edges': self.analyze_edge_quality(face_img),
             'compression': self.analyze_compression_artifacts(face_img),
             'symmetry': self.analyze_symmetry(face_img),
+            'eyes': self.analyze_eye_region(face_img),
+            'teeth': self.analyze_teeth_region(face_img),
+            'hair': self.analyze_hair_boundary(face_img),
+            'skin_pores': self.analyze_skin_pores(face_img),
+            'lighting': self.analyze_lighting_consistency(face_img),
+            'blur': self.analyze_blur_consistency(face_img),
+            'consistency': self.analyze_background_face_consistency(face_img),
         }
 
-        # Weighted combination
+        # Weighted combination (15 methods now)
         weights = {
-            'frequency': 0.15,
-            'channel_corr': 0.15,
-            'micro_texture': 0.18,
-            'color': 0.12,
-            'noise': 0.12,
-            'edges': 0.10,
-            'compression': 0.08,
-            'symmetry': 0.10,
+            'frequency': 0.10,
+            'channel_corr': 0.08,
+            'micro_texture': 0.10,
+            'color': 0.06,
+            'noise': 0.08,
+            'edges': 0.06,
+            'compression': 0.05,
+            'symmetry': 0.07,
+            'eyes': 0.10,
+            'teeth': 0.06,
+            'hair': 0.06,
+            'skin_pores': 0.08,
+            'lighting': 0.05,
+            'blur': 0.03,
+            'consistency': 0.02,
         }
 
         total_ai = sum(analyses[k][0] * weights[k] for k in weights)
@@ -615,24 +1009,15 @@ class DeepfakeDetector:
         else:
             results["overall_score"] = round(face_data[0]['deepfake_probability'], 3)
 
-        # Determine verdict
+        # Determine verdict (simplified to REAL or FAKE)
         score = results["overall_score"]
 
-        if score < 0.25:
-            results["verdict"] = "Likely REAL"
+        if score < 0.50:
+            results["verdict"] = "REAL"
             results["confidence"] = round((1 - score) * 100, 1)
-        elif score < 0.40:
-            results["verdict"] = "Probably REAL"
-            results["confidence"] = round((1 - score) * 100, 1)
-        elif score < 0.55:
-            results["verdict"] = "UNCERTAIN"
-            results["confidence"] = 50.0
-        elif score < 0.70:
-            results["verdict"] = "Probably FAKE"
-            results["confidence"] = round(score * 100, 1)
         else:
-            results["verdict"] = "Likely FAKE"
-            results["confidence"] = round(min(score * 100, 95), 1)
+            results["verdict"] = "FAKE"
+            results["confidence"] = round(score * 100, 1)
 
         return results
 
@@ -692,21 +1077,12 @@ class DeepfakeDetector:
             results["overall_score"] = round(float(np.mean(frame_scores)), 3)
             score = results["overall_score"]
 
-            if score < 0.25:
-                results["verdict"] = "Likely REAL"
+            if score < 0.50:
+                results["verdict"] = "REAL"
                 results["confidence"] = round((1 - score) * 100, 1)
-            elif score < 0.40:
-                results["verdict"] = "Probably REAL"
-                results["confidence"] = round((1 - score) * 100, 1)
-            elif score < 0.55:
-                results["verdict"] = "UNCERTAIN"
-                results["confidence"] = 50.0
-            elif score < 0.70:
-                results["verdict"] = "Probably FAKE"
-                results["confidence"] = round(score * 100, 1)
             else:
-                results["verdict"] = "Likely FAKE"
-                results["confidence"] = round(min(score * 100, 95), 1)
+                results["verdict"] = "FAKE"
+                results["confidence"] = round(score * 100, 1)
         else:
             results["verdict"] = "No faces detected"
 
@@ -722,24 +1098,18 @@ class DeepfakeDetector:
             prob = face["deepfake_probability"]
             is_ai = face.get("is_likely_ai", prob > 0.55)
 
-            # Color coding
-            if prob < 0.25:
-                color = (0, 255, 0)  # Green
-            elif prob < 0.40:
-                color = (0, 200, 100)  # Light green
-            elif prob < 0.55:
-                color = (0, 255, 255)  # Yellow
-            elif prob < 0.70:
-                color = (0, 165, 255)  # Orange
+            # Color coding (simplified)
+            if prob < 0.50:
+                color = (0, 255, 0)  # Green = REAL
             else:
-                color = (0, 0, 255)  # Red
+                color = (0, 0, 255)  # Red = FAKE
 
             # Draw box
             thickness = 3 if is_ai else 2
             cv2.rectangle(output, (x, y), (x+w, y+h), color, thickness)
 
             # Label
-            label = f"{'AI' if is_ai else 'Real'}: {prob*100:.0f}%"
+            label = f"{'FAKE' if prob >= 0.50 else 'REAL'}: {prob*100:.0f}%"
             (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
             cv2.rectangle(output, (x, y-28), (x + lw + 10, y), color, -1)
             cv2.putText(output, label, (x+5, y-8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
