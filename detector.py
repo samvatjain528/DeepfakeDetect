@@ -1109,17 +1109,16 @@ class DeepfakeDetector:
             cv2.rectangle(output, (x, y), (x+w, y+h), color, thickness)
 
             # Label
-            label = f"{'FAKE' if prob >= 0.50 else 'REAL'}: {prob*100:.0f}%"
+            label = "FAKE" if prob >= 0.50 else "REAL"
             (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
             cv2.rectangle(output, (x, y-28), (x + lw + 10, y), color, -1)
             cv2.putText(output, label, (x+5, y-8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
         # Overall verdict
         verdict = results.get("verdict", "Unknown")
-        confidence = results.get("confidence", 0)
         mixed = results.get("has_mixed_faces", False)
 
-        verdict_text = f"{verdict} ({confidence:.0f}%)"
+        verdict_text = verdict
         if mixed:
             verdict_text += " - MIXED"
 
