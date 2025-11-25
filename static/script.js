@@ -197,12 +197,15 @@ function displayResults(results) {
     // Update detector badge
     const detectorBadge = document.getElementById('detectorBadge');
     const detectorUsed = results.detector_used || 'cv';
+    detectorBadge.classList.remove('hf', 'svm');
     if (detectorUsed === 'hf') {
         detectorBadge.textContent = 'AI Detector';
         detectorBadge.classList.add('hf');
+    } else if (detectorUsed === 'svm') {
+        detectorBadge.textContent = 'SVM Detector';
+        detectorBadge.classList.add('svm');
     } else {
         detectorBadge.textContent = 'CV Detector';
-        detectorBadge.classList.remove('hf');
     }
 
     // Update verdict
@@ -283,19 +286,28 @@ function generateExplanation(results) {
     const verdict = results.verdict || 'Unknown';
     const confidence = results.confidence || 0;
     const faces = results.faces_detected || 0;
-    const isHF = results.detector_used === 'hf';
+    const detectorUsed = results.detector_used || 'cv';
+    const isHF = detectorUsed === 'hf';
+    const isSVM = detectorUsed === 'svm';
 
     if (faces === 0 && !results.full_image_analysis) {
         return 'No faces were detected in this image. The detector needs visible faces to analyze for deepfakes. Try uploading an image with clear, visible faces.';
     }
 
     let explanation = '';
-    const detectorName = isHF ? 'AI model (Hugging Face)' : 'computer vision analysis';
+    let detectorName = 'computer vision analysis';
+    if (isHF) {
+        detectorName = 'AI model (Hugging Face)';
+    } else if (isSVM) {
+        detectorName = 'SVM + ViT classifier';
+    }
 
     if (verdict.includes('REAL')) {
         explanation = `This image appears to be authentic with ${confidence.toFixed(1)}% confidence (using ${detectorName}). `;
         if (isHF) {
             explanation += 'The deep learning model found patterns consistent with authentic images. ';
+        } else if (isSVM) {
+            explanation += 'The Vision Transformer embeddings combined with SVM classification indicate authentic image features. ';
         } else {
             explanation += 'The analysis found natural frequency patterns, consistent face boundaries, and no obvious manipulation artifacts. ';
         }
@@ -307,7 +319,7 @@ function generateExplanation(results) {
             const face = results.face_analyses[0];
             const issues = [];
 
-            if (isHF) {
+            if (isHF || isSVM) {
                 if (face.deepfake_probability > 0.6) {
                     issues.push('AI-generated facial features');
                 }
@@ -337,8 +349,8 @@ function generateExplanation(results) {
     } else {
         explanation = `The results are inconclusive (${confidence.toFixed(1)}% confidence). `;
         explanation += 'The image shows some characteristics that could indicate manipulation, but not enough to make a definitive determination. ';
-        if (!isHF) {
-            explanation += 'Try using the AI Detector for potentially better results. ';
+        if (!isHF && !isSVM) {
+            explanation += 'Try using the AI or SVM Detector for potentially better results. ';
         }
         explanation += 'Use professional forensic tools for critical decisions.';
     }

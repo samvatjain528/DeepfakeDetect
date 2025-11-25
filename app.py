@@ -3,9 +3,10 @@ Deepfake Detection Web Application
 ==================================
 A Flask-based web interface for the deepfake detector.
 
-Supports two detector backends:
+Supports three detector backends:
 1. CV Detector - Traditional computer vision methods (fast, no GPU needed)
 2. HF Detector - Hugging Face AI model (more accurate, downloads ~350MB model)
+3. SVM Detector - ViT embeddings + SVM classifier (trainable on custom datasets)
 
 Usage:
     python app.py
@@ -28,6 +29,14 @@ try:
 except ImportError:
     HF_AVAILABLE = False
     HuggingFaceDeepfakeDetector = None
+
+# Try to import SVM detector
+try:
+    from detector_svm import SVMDeepfakeDetector, is_svm_available
+    SVM_AVAILABLE = is_svm_available()
+except ImportError:
+    SVM_AVAILABLE = False
+    SVMDeepfakeDetector = None
 
 
 class NumpyJSONProvider(DefaultJSONProvider):
@@ -54,10 +63,11 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # Initialize detectors
 cv_detector = DeepfakeDetector()
 hf_detector = None  # Lazy load on first use
+svm_detector = None  # Lazy load on first use
 
 def get_detector(detector_type='cv'):
     """Get the appropriate detector based on type."""
-    global hf_detector
+    global hf_detector, svm_detector
 
     if detector_type == 'hf':
         if not HF_AVAILABLE:
@@ -69,6 +79,22 @@ def get_detector(detector_type='cv'):
             print("Loading Hugging Face model (first time may take a while)...")
             hf_detector = HuggingFaceDeepfakeDetector()
         return hf_detector
+
+    if detector_type == 'svm':
+        if not SVM_AVAILABLE:
+            raise RuntimeError(
+                "SVM detector not available. "
+                "Install with: pip install transformers torch torchvision scikit-learn joblib"
+            )
+        if svm_detector is None:
+            print("Loading SVM + ViT model (first time may take a while)...")
+            # Check for pre-trained model
+            model_path = os.path.join(os.path.dirname(__file__), 'svm_model.joblib')
+            if os.path.exists(model_path):
+                svm_detector = SVMDeepfakeDetector(svm_model_path=model_path)
+            else:
+                svm_detector = SVMDeepfakeDetector()
+        return svm_detector
 
     return cv_detector
 
@@ -95,7 +121,7 @@ def image_to_base64(image):
 @app.route('/')
 def index():
     """Render the main page."""
-    return render_template('index.html', hf_available=HF_AVAILABLE)
+    return render_template('index.html', hf_available=HF_AVAILABLE, svm_available=SVM_AVAILABLE)
 
 
 @app.route('/api/status')
@@ -113,6 +139,11 @@ def api_status():
                 'available': HF_AVAILABLE,
                 'name': 'AI Detector',
                 'description': 'Hugging Face model (more accurate, requires torch)'
+            },
+            'svm': {
+                'available': SVM_AVAILABLE,
+                'name': 'SVM Detector',
+                'description': 'ViT + SVM classifier (trainable, requires sklearn)'
             }
         }
     })
@@ -258,6 +289,11 @@ if __name__ == '__main__':
     else:
         print("  - AI Detector: Not installed")
         print("    Install with: pip install transformers torch torchvision")
+    if SVM_AVAILABLE:
+        print("  - SVM Detector: Available (ViT + SVM, trainable)")
+    else:
+        print("  - SVM Detector: Not installed")
+        print("    Install with: pip install transformers torch scikit-learn joblib")
     print("\nStarting server...")
     print("Open http://localhost:5000 in your browser")
     print("\nPress Ctrl+C to stop the server")
